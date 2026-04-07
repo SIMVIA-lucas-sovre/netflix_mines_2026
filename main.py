@@ -92,7 +92,10 @@ async def registerUser(user: User):
 
 @app.post("/auth/login")
 async def loginUser(user: User ):
-    ...
+    return {
+  "access_token": "eyJhbGciOi...",
+  "token_type": "bearer"
+}
 
 SECRET_KEY = "4a337e2670188a0b893fb6280f6890efbda50275c6f07cd68880afaf143c8996"
 ALGORITHM = "HS256"
