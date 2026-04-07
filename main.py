@@ -12,6 +12,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
 from datetime import timedelta
 import datetime as dt
+import sqlite3
 
 app = FastAPI()
 
@@ -102,10 +103,16 @@ async def registerUser(user: User):
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(f"""
-            INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) VALUES('{user.email}', '{user.pseudo}', '{hash_password}') RETURNING *
-            """)
-        res = dict(cursor.fetchone()) # On recup ce qu'on a mis dedans
+
+        try:
+            cursor.execute(f"""
+                INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) VALUES('{user.email}', '{user.pseudo}', '{hash_password}') RETURNING *
+                """)
+            res = dict(cursor.fetchone()) # On recup ce qu'on a mis dedans
+        except sqlite3.IntegrityError:
+            # Deux emails
+            raise HTTPException(status_code=409, detail=f"Erreur interne : Email already exists")
+
 
         token = create_access_token(res, timedelta(days=1))
         output_dict = {
