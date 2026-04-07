@@ -107,11 +107,15 @@ class User(BaseModel):
 
 salt = b'$2b$12$HS34zys/Tw6HsKps1esSLe' # goofy aah
 
+
+def check_user_valid(user: User):
+    if user.email is None or user.password is None or user.password is None:
+        raise HTTPException(status_code=422, detail=f"Error: Il faut remplir tous les champs")
+
 @app.post("/auth/register")
 async def registerUser(user: User):
 
-    if user.email is None or user.password is None or user.password is None:
-        raise HTTPException(status_code=422, detail=f"Error: Il faut remplir l'un des champs")
+    check_user_valid(user)
 
     # On met le sel "+ pseudo"
     # salt = bcrypt.gensalt()
@@ -139,10 +143,13 @@ async def registerUser(user: User):
 
         return output_dict
 
+
 @app.post("/auth/login")
-async def loginUser(user: User ):
+async def loginUser(user: User):
         # On met le sel "+ pseudo"
     # salt = bcrypt.gensalt()
+
+    check_user_valid(user)
 
     # Hashing the password
     hash_password = bcrypt.hashpw(user.password.encode('utf-8'), salt).decode('utf-8')
@@ -155,7 +162,7 @@ async def loginUser(user: User ):
 
         res = cursor.fetchone() # On recup ce qu'on a mis dedans
         if res is None:
-            raise HTTPException(status_code=500, detail=f"Erreur interne : Wrong Password")
+            raise HTTPException(status_code=401, detail=f"Erreur interne: Email ou Password faux")
         res = dict(res)
         
         token = create_access_token(res, timedelta(days=1))
