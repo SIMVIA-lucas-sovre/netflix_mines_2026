@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
+
 from db import get_connection
 
 app = FastAPI()
@@ -17,6 +18,16 @@ class Film(BaseModel):
     image: str | None = None
     video: str | None = None
     genreId: int | None = None
+
+@app.get("/films/{film_id}")
+async def getfilm(request: Request):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT * FROM film WHERE id = {request.path_params["film_id"]}
+            """)
+        res = cursor.fetchone()
+        return res
 
 @app.post("/film")
 async def createFilm(film : Film):
