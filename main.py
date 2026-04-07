@@ -18,6 +18,25 @@ class Film(BaseModel):
     video: str | None = None
     genreId: int | None = None
 
+class user(BaseModel):
+    id: int | None = None
+    pseudo: str
+    email: str
+    password: str
+
+@app.post("/user")
+async def register(user : user):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            INSERT INTO "User" (Pseudo,Email,Password)  
+            VALUES('{user.pseudo}','{user.email}','{user.password}') RETURNING *
+            """)
+        res = cursor.fetchone()
+        print(res)
+        return res
+
+
 @app.post("/film")
 async def createFilm(film : Film):
     with get_connection() as conn:
@@ -31,10 +50,13 @@ async def createFilm(film : Film):
         return res
 
 @app.get("/films")
-async def getFilms(per_page: int = 10, page: int = 1):
+async def getFilms( page: int = 1, per_page: int = 10, genre : int | None = None):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM Film LIMIT {per_page} OFFSET {(page - 1) * per_page}")
+        if genre is not None:
+            cursor.execute(f"SELECT * FROM Film WHERE Genre_Id={genre} ORDER BY dateSortie DESC LIMIT {per_page} OFFSET {(page - 1) * per_page} ")
+        else:
+            cursor.execute(f"SELECT * FROM Film ORDER BY dateSortie DESC LIMIT {per_page} OFFSET {(page - 1) * per_page} ")
         res = cursor.fetchall()
         print(res)
         return res
