@@ -1,11 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 
 from db import get_connection, init_db
-from routes_auth import router as auth_router
-from routes_films import router as films_router
-from routes_genres import router as genres_router
-from routes_preferences import router as preferences_router
 
 app = FastAPI(title="CinéAPI")
 
@@ -16,11 +14,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(auth_router)
-app.include_router(films_router)
-app.include_router(genres_router)
-app.include_router(preferences_router)
 
 
 @app.on_event("startup")
