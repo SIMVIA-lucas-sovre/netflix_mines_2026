@@ -10,6 +10,11 @@ from db import get_connection
 
 app = FastAPI()
 
+@app.get("/ping")
+def ping():
+    return {"message": "pong"}
+
+
 # Clé secrète pour signer les tokens JWT (à garder privée en prod)
 SECRET_KEY = "supersecretkey"
 
@@ -83,13 +88,7 @@ def get_user_id_from_header(authorization: str) -> int:
     return decode_token(token)
 
 
-# ─────────────────────────────────────────
-# SÉANCE 1 — FILMS & GENRES
-# ─────────────────────────────────────────
 
-@app.get("/ping")
-def ping():
-    return {"message": "pong"}
 
 
 @app.get("/films", response_model=PaginatedResponse)
