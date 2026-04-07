@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
-import sqlite3
+
 import bcrypt
 import jwt
 import datetime
@@ -19,9 +19,8 @@ def ping():
 SECRET_KEY = "supersecretkey"
 
 
-# ─────────────────────────────────────────
+
 # SCHÉMAS PYDANTIC
-# ─────────────────────────────────────────
 
 class FilmResponse(BaseModel):
     ID: int
@@ -44,7 +43,7 @@ class PaginatedResponse(BaseModel):
 
 class RegisterBody(BaseModel):
     email: str
-    pseudo: str
+    pseudo: Optional[str] = "User"
     password: str
 
 class LoginBody(BaseModel):
