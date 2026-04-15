@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
-
+import sqlite3
 import bcrypt
 import jwt
 import datetime
@@ -10,17 +10,12 @@ from db import get_connection
 
 app = FastAPI()
 
-@app.get("/ping")
-def ping():
-    return {"message": "pong"}
-
-
-# Clé secrète pour signer les tokens JWT (à garder privée en prod)
 SECRET_KEY = "supersecretkey"
 
 
-
+# ─────────────────────────────────────────
 # SCHÉMAS PYDANTIC
+# ─────────────────────────────────────────
 
 class FilmResponse(BaseModel):
     ID: int
@@ -43,7 +38,7 @@ class PaginatedResponse(BaseModel):
 
 class RegisterBody(BaseModel):
     email: str
-    pseudo: Optional[str] = "User"
+    pseudo: str
     password: str
 
 class LoginBody(BaseModel):
@@ -70,7 +65,6 @@ def create_token(user_id: int) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 def decode_token(token: str) -> int:
-    """Décode le token et retourne l'user_id. Lève une 401 si invalide."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         return payload["user_id"]
@@ -80,14 +74,28 @@ def decode_token(token: str) -> int:
         raise HTTPException(status_code=401, detail="Token invalide")
 
 def get_user_id_from_header(authorization: str) -> int:
-    """Extrait le token du header 'Bearer <token>' et retourne l'user_id."""
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Header Authorization manquant ou mal formé")
+        raise HTTPException(status_code=422, detail="Header Authorization manquant ou mal formé")
     token = authorization.split(" ")[1]
     return decode_token(token)
 
 
+# ─────────────────────────────────────────
+# SÉANCE 1 — FILMS & GENRES
+# ─────────────────────────────────────────
 
+@app.get("/ping")
+def ping():
+    return {"message": "pong"}
+
+
+@app.get("/genres", response_model=list[GenreResponse])
+def get_genres():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM Genre ORDER BY Type ASC")
+        genres = [dict(row) for row in cursor.fetchall()]
+    return genres
 
 
 @app.get("/films", response_model=PaginatedResponse)
@@ -97,7 +105,7 @@ def get_films(page: int = 1, per_page: int = 20, genre_id: Optional[int] = None)
     with get_connection() as conn:
         cursor = conn.cursor()
 
-        if genre_id:
+        if genre_id is not None:
             cursor.execute(
                 "SELECT COUNT(*) FROM Film WHERE Genre_ID = ?",
                 (genre_id,)
@@ -105,7 +113,7 @@ def get_films(page: int = 1, per_page: int = 20, genre_id: Optional[int] = None)
             total = cursor.fetchone()[0]
 
             cursor.execute(
-                "SELECT * FROM Film WHERE Genre_ID = ? LIMIT ? OFFSET ?",
+                "SELECT * FROM Film WHERE Genre_ID = ? ORDER BY DateSortie DESC LIMIT ? OFFSET ?",
                 (genre_id, per_page, offset)
             )
         else:
@@ -113,7 +121,7 @@ def get_films(page: int = 1, per_page: int = 20, genre_id: Optional[int] = None)
             total = cursor.fetchone()[0]
 
             cursor.execute(
-                "SELECT * FROM Film LIMIT ? OFFSET ?",
+                "SELECT * FROM Film ORDER BY DateSortie DESC LIMIT ? OFFSET ?",
                 (per_page, offset)
             )
 
@@ -135,22 +143,12 @@ def get_film(film_id: int):
     return dict(film)
 
 
-@app.get("/genres", response_model=list[GenreResponse])
-def get_genres():
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM Genre")
-        genres = [dict(row) for row in cursor.fetchall()]
-    return genres
-
-
 # ─────────────────────────────────────────
 # SÉANCE 2 — AUTH
 # ─────────────────────────────────────────
 
 @app.post("/auth/register", response_model=TokenResponse)
 def register(body: RegisterBody):
-    # On hache le mot de passe avant de le stocker
     hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
 
     with get_connection() as conn:
@@ -163,7 +161,7 @@ def register(body: RegisterBody):
             user_id = cursor.fetchone()["ID"]
             conn.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+            raise HTTPException(status_code=409, detail="Email déjà utilisé")
 
     return {"access_token": create_token(user_id)}
 
@@ -189,7 +187,9 @@ def login(body: LoginBody):
 # ─────────────────────────────────────────
 
 @app.post("/preferences", status_code=201)
-def add_preference(body: PreferenceBody, authorization: str = Header(None)):
+def add_preference(body: PreferenceBody, authorization: Optional[str] = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=422, detail="Header Authorization manquant")
     user_id = get_user_id_from_header(authorization)
 
     with get_connection() as conn:
@@ -201,13 +201,15 @@ def add_preference(body: PreferenceBody, authorization: str = Header(None)):
             )
             conn.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Préférence déjà ajoutée")
+            raise HTTPException(status_code=409, detail="Préférence déjà ajoutée")
 
     return {"detail": "Préférence ajoutée"}
 
 
 @app.delete("/preferences/{genre_id}")
-def delete_preference(genre_id: int, authorization: str = Header(None)):
+def delete_preference(genre_id: int, authorization: Optional[str] = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=422, detail="Header Authorization manquant")
     user_id = get_user_id_from_header(authorization)
 
     with get_connection() as conn:
@@ -216,22 +218,27 @@ def delete_preference(genre_id: int, authorization: str = Header(None)):
             "DELETE FROM Genre_Utilisateur WHERE ID_Genre = ? AND ID_User = ?",
             (genre_id, user_id)
         )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Préférence non trouvée")
         conn.commit()
 
     return {"detail": "Préférence supprimée"}
 
 
 @app.get("/preferences/recommendations", response_model=list[FilmResponse])
-def get_recommendations(authorization: str = Header(None)):
+def get_recommendations(authorization: Optional[str] = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=422, detail="Header Authorization manquant")
     user_id = get_user_id_from_header(authorization)
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        # On récupère les films dont le genre est dans les préférences de l'utilisateur
         cursor.execute("""
             SELECT Film.* FROM Film
             JOIN Genre_Utilisateur ON Film.Genre_ID = Genre_Utilisateur.ID_Genre
             WHERE Genre_Utilisateur.ID_User = ?
+            ORDER BY Film.DateSortie DESC
+            LIMIT 5
         """, (user_id,))
         films = [dict(row) for row in cursor.fetchall()]
 
