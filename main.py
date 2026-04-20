@@ -1,27 +1,18 @@
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
-
 import bcrypt
-import jwt
+import jwt  # Ajout
 import datetime
+import sqlite3 # Ajout
 
 from db import get_connection
 
 app = FastAPI()
 
-@app.get("/ping")
-def ping():
-    return {"message": "pong"}
-
-
-# Clé secrète pour signer les tokens JWT (à garder privée en prod)
 SECRET_KEY = "supersecretkey"
 
-
-
-# SCHÉMAS PYDANTIC
-
+# --- SCHÉMAS ---
 class FilmResponse(BaseModel):
     ID: int
     Nom: str
@@ -57,11 +48,7 @@ class TokenResponse(BaseModel):
 class PreferenceBody(BaseModel):
     genre_id: int
 
-
-# ─────────────────────────────────────────
-# UTILITAIRE JWT
-# ─────────────────────────────────────────
-
+# --- UTILS ---
 def create_token(user_id: int) -> str:
     payload = {
         "user_id": user_id,
@@ -69,175 +56,110 @@ def create_token(user_id: int) -> str:
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-def decode_token(token: str) -> int:
-    """Décode le token et retourne l'user_id. Lève une 401 si invalide."""
+def get_user_id_from_header(authorization: str) -> int:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Header invalide")
+    token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         return payload["user_id"]
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expiré")
-    except jwt.InvalidTokenError:
+    except:
         raise HTTPException(status_code=401, detail="Token invalide")
 
-def get_user_id_from_header(authorization: str) -> int:
-    """Extrait le token du header 'Bearer <token>' et retourne l'user_id."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Header Authorization manquant ou mal formé")
-    token = authorization.split(" ")[1]
-    return decode_token(token)
-
-
-
-
+# --- ROUTES ---
+@app.get("/ping")
+def ping():
+    return {"message": "pong"}
 
 @app.get("/films", response_model=PaginatedResponse)
 def get_films(page: int = 1, per_page: int = 20, genre_id: Optional[int] = None):
     offset = (page - 1) * per_page
-
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
         if genre_id:
-            cursor.execute(
-                "SELECT COUNT(*) FROM Film WHERE Genre_ID = ?",
-                (genre_id,)
-            )
+            cursor.execute("SELECT COUNT(*) FROM Film WHERE Genre_ID = ?", (genre_id,))
             total = cursor.fetchone()[0]
-
-            cursor.execute(
-                "SELECT * FROM Film WHERE Genre_ID = ? LIMIT ? OFFSET ?",
-                (genre_id, per_page, offset)
-            )
+            cursor.execute("SELECT * FROM Film WHERE Genre_ID = ? ORDER BY DateSortie DESC LIMIT ? OFFSET ?", (genre_id, per_page, offset))
         else:
             cursor.execute("SELECT COUNT(*) FROM Film")
             total = cursor.fetchone()[0]
-
-            cursor.execute(
-                "SELECT * FROM Film LIMIT ? OFFSET ?",
-                (per_page, offset)
-            )
-
+            cursor.execute("SELECT * FROM Film ORDER BY DateSortie DESC LIMIT ? OFFSET ?", (per_page, offset))
         films = [dict(row) for row in cursor.fetchall()]
-
     return {"data": films, "page": page, "per_page": per_page, "total": total}
-
 
 @app.get("/films/{film_id}", response_model=FilmResponse)
 def get_film(film_id: int):
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM Film WHERE ID = ?", (film_id,))
         film = cursor.fetchone()
-
-    if film is None:
-        raise HTTPException(status_code=404, detail="Film non trouvé")
-
+    if not film: raise HTTPException(status_code=404)
     return dict(film)
-
 
 @app.get("/genres", response_model=list[GenreResponse])
 def get_genres():
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM Genre")
-        genres = [dict(row) for row in cursor.fetchall()]
-    return genres
-
-
-# ─────────────────────────────────────────
-# SÉANCE 2 — AUTH
-# ─────────────────────────────────────────
+        cursor.execute("SELECT * FROM Genre ORDER BY Type ASC")
+        return [dict(row) for row in cursor.fetchall()]
 
 @app.post("/auth/register", response_model=TokenResponse)
 def register(body: RegisterBody):
-    # On hache le mot de passe avant de le stocker
     hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
-
     with get_connection() as conn:
-        cursor = conn.cursor()
         try:
-            cursor.execute(
-                "INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) VALUES (?, ?, ?) RETURNING ID",
-                (body.email, body.pseudo, hashed)
-            )
-            user_id = cursor.fetchone()["ID"]
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) VALUES (?, ?, ?)", (body.email, body.pseudo, hashed))
+            user_id = cursor.lastrowid
             conn.commit()
+            return {"access_token": create_token(user_id)}
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
-
-    return {"access_token": create_token(user_id)}
-
+            raise HTTPException(status_code=409)
 
 @app.post("/auth/login", response_model=TokenResponse)
 def login(body: LoginBody):
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM Utilisateur WHERE AdresseMail = ?",
-            (body.email,)
-        )
+        cursor.execute("SELECT * FROM Utilisateur WHERE AdresseMail = ?", (body.email,))
         user = cursor.fetchone()
-
-    if user is None or not bcrypt.checkpw(body.password.encode(), user["MotDePasse"].encode()):
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-
+    if not user or not bcrypt.checkpw(body.password.encode(), user["MotDePasse"].encode()):
+        raise HTTPException(status_code=401)
     return {"access_token": create_token(user["ID"])}
-
-
-# ─────────────────────────────────────────
-# SÉANCE 2 — PRÉFÉRENCES
-# ─────────────────────────────────────────
 
 @app.post("/preferences", status_code=201)
 def add_preference(body: PreferenceBody, authorization: str = Header(None)):
     user_id = get_user_id_from_header(authorization)
-
     with get_connection() as conn:
-        cursor = conn.cursor()
         try:
-            cursor.execute(
-                "INSERT INTO Genre_Utilisateur (ID_Genre, ID_User) VALUES (?, ?)",
-                (body.genre_id, user_id)
-            )
+            conn.execute("INSERT INTO Genre_Utilisateur (ID_Genre, ID_User) VALUES (?, ?)", (body.genre_id, user_id))
             conn.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Préférence déjà ajoutée")
-
-    return {"detail": "Préférence ajoutée"}
-
+            raise HTTPException(status_code=409)
+    return {"detail": "OK"}
 
 @app.delete("/preferences/{genre_id}")
 def delete_preference(genre_id: int, authorization: str = Header(None)):
     user_id = get_user_id_from_header(authorization)
-
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM Genre_Utilisateur WHERE ID_Genre = ? AND ID_User = ?",
-            (genre_id, user_id)
-        )
+        cursor.execute("DELETE FROM Genre_Utilisateur WHERE ID_Genre = ? AND ID_User = ?", (genre_id, user_id))
+        if cursor.rowcount == 0: raise HTTPException(status_code=404)
         conn.commit()
-
-    return {"detail": "Préférence supprimée"}
-
+    return {"detail": "Supprimé"}
 
 @app.get("/preferences/recommendations", response_model=list[FilmResponse])
 def get_recommendations(authorization: str = Header(None)):
     user_id = get_user_id_from_header(authorization)
-
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        # On récupère les films dont le genre est dans les préférences de l'utilisateur
         cursor.execute("""
-            SELECT Film.* FROM Film
-            JOIN Genre_Utilisateur ON Film.Genre_ID = Genre_Utilisateur.ID_Genre
-            WHERE Genre_Utilisateur.ID_User = ?
+            SELECT F.* FROM Film F 
+            JOIN Genre_Utilisateur GU ON F.Genre_ID = GU.ID_Genre 
+            WHERE GU.ID_User = ? ORDER BY F.DateSortie DESC LIMIT 5
         """, (user_id,))
-        films = [dict(row) for row in cursor.fetchall()]
-
-    return films
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        return [dict(row) for row in cursor.fetchall()]
