@@ -3,5 +3,5 @@ uvicorn
 pydantic
 bcrypt
 typing
-jwt
+
 datetime
