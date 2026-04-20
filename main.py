@@ -2,9 +2,9 @@ from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 import bcrypt
-import jwt  # Ajout
+#import jwt  # Ajout
 import datetime
-import sqlite3 # Ajout
+#import sqlite3 # Ajout
 
 from db import get_connection
 
