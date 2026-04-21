@@ -60,7 +60,7 @@ async def getfilms_paginated(page: int = 1, per_page: int = 20, genre_id: int | 
             "per_page": per_page,
             "total": nb_films
             }
-        return output
+        return films
 
 class Film(BaseModel):
     id: int | None = None
