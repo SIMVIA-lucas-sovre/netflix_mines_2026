@@ -26,6 +26,8 @@ ip_log = {}
 max_delay = 60 # s
 RATE_LIMIT = 5
 
+real_time_clock_id = time.CLOCK_REALTIME
+
 class IPTrackingRoute(APIRoute):
     def get_route_handler(self) -> Callable:
         original_route_handler = super().get_route_handler()
@@ -41,15 +43,15 @@ class IPTrackingRoute(APIRoute):
             print(f"IP: {client_ip} - Route: {request.url.path}")
 
 
-            current_time = time.clock_gettime_ns()
+            current_time = time.clock_gettime_ns(real_time_clock_id)
             if client_ip in ip_log:
 
                 tab = ip_log[client_ip]
-                tab = [timedelta.seconds(x - current_time) <= max_delay for x in tab]
+                tab = [(current_time - x) / (10**9) <= max_delay for x in tab]
                 tab.append(current_time)
 
                 if len(tab) > RATE_LIMIT:
-                    return None # Temporaire
+                    raise HTTPException(status_code=403, detail="Forbidden.") # Temporaire
 
                 ip_log[client_ip] = tab
             else:
