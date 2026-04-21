@@ -79,6 +79,10 @@ async def getfilm(request: Request):
             SELECT * FROM film WHERE id = {request.path_params["film_id"]}
             """)
         res = cursor.fetchone() # C 1 clai primair
+
+        if res[0] is None:
+            raise HTTPException(status_code=404, "Film not found !")
+
         return res
 
 @app.get("/genres")
@@ -286,13 +290,14 @@ async def preferences_get_recommendations(credentials: HTTPAuthorizationCredenti
         cursor = conn.cursor()
 
         cursor.execute(f"""
-            SELECT ID FROM Film JOIN Genre_Utilisateur ON ID_Genre = Genre_ID WHERE ID_User = {user_data["ID"]} 
+            SELECT ID,NOM,NOTE,DATESORTIE,IMAGE,VIDEO,Genre_ID FROM Film JOIN Genre_Utilisateur ON ID_Genre = Genre_ID WHERE ID_User = {user_data["ID"]} ORDER BY DATE_SORTIE DESC LIMIT = 5
         """)
 
         res = cursor.fetchall()
 
         if len(res) == 0:
             return [] # Cas vide
+        return res
 
         
 
