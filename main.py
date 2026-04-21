@@ -197,7 +197,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 class prefEntry(BaseModel):
     genre_id: int = 0
 
-@app.post("/preferences")
+@app.post("/preferences", status_code=201)
 async def add_pref(pref_entry: prefEntry, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
         Prend l'access token en argument, et l'entry preferée.
