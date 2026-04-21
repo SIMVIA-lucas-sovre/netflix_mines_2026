@@ -256,8 +256,8 @@ async def preferences_del(genre: int, credentials: HTTPAuthorizationCredentials 
             SELECT COUNT(*) FROM Genre_Utilisateur  WHERE ID_Genre = {genre} AND ID_User = {user_data["ID"]}
         """)
 
-        res = cursor.fetchone()
-        print(res)
+        res = cursor.fetchone()["COUNT(*)"]
+        print("count: ", res)
 
         if res == 0:
             raise HTTPException(status_code=404, detail="Erreur interne: Genre non favori !")
