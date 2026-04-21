@@ -22,6 +22,14 @@ import time
 import datetime as dt
 from datetime import timedelta
 
+"""
+Fonctionnement du RATE LIMIT:
+
+On intercepte l'IP avant le routage classique via un objet hérité de APIRoute.
+
+Pour tester, mettre RATE_LIMIT à 5 et faire 6 requetes
+"""
+
 ip_log = {}
 max_delay = 60 # s
 RATE_LIMIT = 50 # Requetes tous les max_delay
@@ -39,10 +47,6 @@ class IPTrackingRoute(APIRoute):
             if forwarded:
                 client_ip = forwarded.split(",")[0].strip()
             
-            # Log IP with route info
-            print(f"IP: {client_ip} - Route: {request.url.path}")
-
-
             current_time = time.clock_gettime_ns(real_time_clock_id)
             if client_ip in ip_log:
 
@@ -57,10 +61,9 @@ class IPTrackingRoute(APIRoute):
             else:
                 ip_log[client_ip] = [current_time]
             
-            # Store in request state
             request.state.client_ip = client_ip
             
-            # Process the original route
+            # Routage classique
             response = await original_route_handler(request)
             return response
         
