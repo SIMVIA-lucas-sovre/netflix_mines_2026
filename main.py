@@ -210,13 +210,14 @@ async def add_pref(x_token: Annotated[list[str] | None, Header()] = None, pref_e
         if pref_entry.genre_id not in [x["ID"] for x in res]:
             raise HTTPException(status_code=409, detail="Erreur interne: Le genre n'existe pas !")
 
-    #if x_token is None:
-    #    raise HTTPException(status_code=422, detail="Erreur interne: Spap token")
+    print("token is: ", x_token)
+    if x_token is None:
+        raise HTTPException(status_code=422, detail="Erreur interne: Spap token")
 
-    #try:
-    user_data = jwt.decode(x_token[0], SECRET_KEY, ALGORITHM)
-    #except: # moche
-    #    raise HTTPException(status_code=401, detail="Erreur interne: Mauvais token")
+    try:
+        user_data = jwt.decode(x_token[0], SECRET_KEY, ALGORITHM)
+    except: # moche
+        raise HTTPException(status_code=401, detail="Erreur interne: Mauvais token")
 
     with get_connection() as conn:
         cursor = conn.cursor()
