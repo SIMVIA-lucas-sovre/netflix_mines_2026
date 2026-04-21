@@ -238,6 +238,38 @@ async def add_pref(pref_entry: prefEntry, credentials: HTTPAuthorizationCredenti
 
     return {"message": "Everything ok"}
 
+@app.delete("/preferences/{genre}")
+async def preferences_del(genre: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute(f"""
+            SELECT * from genre
+            """)
+        res = cursor.fetchall()
+
+        if genre not in [x["ID"] for x in res]:
+            raise HTTPException(status_code=409, detail="Erreur interne: Le genre n'existe pas !")
+
+    if credentials is None:
+        raise HTTPException(status_code=422, detail="Erreur interne: Spap token")
+
+    try:
+        user_data = jwt.decode(credentials.credentials, SECRET_KEY, ALGORITHM)
+    except: # moche
+        raise HTTPException(status_code=401, detail="Erreur interne: Mauvais token")
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(f"""
+            DELETE FROM Genre_Utilisateur WHERE ID_Genre = {genre} AND ID_User = {user_data["ID"]}
+            """)
+        
+
+    return {"message": f"Deleted {genre} successfully"}
+
 
 if __name__ == "__main__":
     import uvicorn
