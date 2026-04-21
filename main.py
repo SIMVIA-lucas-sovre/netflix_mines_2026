@@ -263,6 +263,15 @@ async def preferences_del(genre: int, credentials: HTTPAuthorizationCredentials 
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        cursor.execute(f""""
+            SELECT COUNT(*) FROM Genre_Utilisateur  WHERE ID_Genre = {genre} AND ID_User = {user_data["ID"]}
+        """)
+
+        res = cursor.fetchone()
+
+        if res == 0:
+            raise HTTPException(status_code=404, detail="Erreur interne: Genre non favori !")
+
         cursor.execute(f"""
             DELETE FROM Genre_Utilisateur WHERE ID_Genre = {genre} AND ID_User = {user_data["ID"]}
             """)
