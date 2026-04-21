@@ -1,26 +1,73 @@
+# FastAPI
 from fastapi import Depends, FastAPI, Request, Header
-from pydantic import BaseModel
 from fastapi.exceptions import HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.routing import APIRoute
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-from db import get_connection
-from typing import Annotated
+from pydantic import BaseModel
 
-
-
-# Gestion des token user
+# JWT & Securité
 import jwt
-
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
-from datetime import timedelta
-import datetime as dt
+
+# Database
+from db import get_connection
 import sqlite3
 
+# Typing
+from typing import Annotated, Callable, Any
+
+# Time & Date
+import time
+import datetime as dt
+from datetime import timedelta
+
+ip_log = {}
+max_delay = 60 # s
+RATE_LIMIT = 5
+
+class IPTrackingRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original_route_handler = super().get_route_handler()
+        
+        async def custom_route_handler(request: Request) -> Any:
+            # Capture IP before processing
+            client_ip = request.client.host
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                client_ip = forwarded.split(",")[0].strip()
+            
+            # Log IP with route info
+            print(f"IP: {client_ip} - Route: {request.url.path}")
+
+
+            current_time = time.clock_gettime_ns()
+            if client_ip in ip_log:
+
+                tab = ip_log[client_ip]
+                tab = [timedelta.seconds(x - current_time) <= max_delay for x in tab]
+                tab.append(current_time)
+
+                if len(tab) > RATE_LIMIT:
+                    return None # Temporaire
+
+                ip_log[client_ip] = tab
+            else:
+                ip_log[client_ip] = [current_time]
+            
+            # Store in request state
+            request.state.client_ip = client_ip
+            
+            # Process the original route
+            response = await original_route_handler(request)
+            return response
+        
+        return custom_route_handler
+
+
 app = FastAPI()
-
+app.router.route_class = IPTrackingRoute
 security = HTTPBearer(auto_error=False)
-
 
 @app.get("/ping")
 def ping():
