@@ -173,6 +173,8 @@ async def loginUser(user: User):
             "token_type": "bearer"
         }
 
+        print(output_dict)
+
         return output_dict
 
 SECRET_KEY = "4a337e2670188a0b893fb6280f6890efbda50275c6f07cd68880afaf143c8996"
